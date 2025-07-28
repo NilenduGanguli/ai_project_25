@@ -1,0 +1,17 @@
+fastapi
+uvicorn[standard]
+python-multipart
+aiofiles
+beanie
+motor
+pymongo
+pydantic
+langchain
+langchain-community
+langchain-core
+langchain-google-genai
+langchain-text-splitters
+python-dotenv
+Pillow
+asyncio
+pyyaml

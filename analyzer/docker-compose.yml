@@ -1,0 +1,61 @@
+services:
+  app:
+    build: .
+    image: pdf-analyzer-api
+    container_name: pdf-analyzer-api
+    ports:
+      - "${PORT:-8001}:${PORT:-8001}"
+      - "9000:9000"
+      # - "8006:8006"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./faiss_index:/app/faiss_index
+    environment:
+      - PORT=${PORT:-8001}
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONPATH=/app
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - LANGSMITH_TRACING=${LANGSMITH_TRACING}
+      - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT}
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY}
+      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import os,urllib.request; urllib.request.urlopen(f'http://localhost:{os.environ.get(\"PORT\",8001)}/')",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - citi-intern-network
+
+  # ocr:
+  #   build: .
+  #   image: pdf-analyzer-ocr
+  #   container_name: pdf-analyzer-ocr
+  #   ports:
+  #     - "8006:8006"
+  #   volumes:
+  #     - ./uploads:/app/uploads
+  #   environment:
+  #     - PYTHONUNBUFFERED=1
+  #     - PYTHONDONTWRITEBYTECODE=1
+  #     - PYTHONPATH=/app
+  #   command: ["python", "test.py"]
+  #   restart: unless-stopped
+
+volumes:
+  uploads:
+    driver: local
+
+networks:
+  citi-intern-network:
+    external: true

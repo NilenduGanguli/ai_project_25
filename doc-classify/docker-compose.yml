@@ -1,0 +1,42 @@
+services:
+  app:
+    build: .
+    image: doc_classify_app
+    container_name: doc_classify_app
+    ports:
+      - "${PORT:-8004}:8004"
+    volumes:
+      - ./uploads:/app/uploads
+    environment:
+      - PORT=${PORT:-8004}
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONPATH=/app
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - LANGSMITH_TRACING=${LANGSMITH_TRACING}
+      - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT}
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY}
+      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT}
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          'import os,urllib.request; urllib.request.urlopen(f''http://localhost:{os.environ.get("PORT",8004)}/'')',
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - citi-intern-network
+
+volumes:
+  uploads:
+    driver: local
+
+networks:
+  citi-intern-network:
+    external: true

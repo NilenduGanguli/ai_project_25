@@ -1,0 +1,26 @@
+services:
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ui-app   
+    network_mode: "host"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./temp:/app/temp
+      - ./plots:/app/plots
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8502/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  uploads:
+    driver: local
+  temp:
+    driver: local
+  plots:
+    driver: local

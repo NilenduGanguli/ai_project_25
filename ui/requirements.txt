@@ -1,0 +1,8 @@
+streamlit
+requests
+seaborn
+python-dotenv
+aiofiles
+PyPDF2
+pdf2image
+Pillow

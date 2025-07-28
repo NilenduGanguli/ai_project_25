@@ -1,0 +1,11 @@
+langchain
+langchain-google-genai
+PyMuPDF
+Pillow
+python-dotenv
+google-generativeai
+aiofiles
+fastapi
+python-multipart
+uvicorn
+langsmith
