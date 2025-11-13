@@ -9,8 +9,8 @@ from src.agent import create_csv_agent
 load_dotenv()
 st.set_page_config(page_title="CSV Analysis Agent")
 
-if "agent_executor" not in st.session_state:
-    st.session_state.agent_executor = create_csv_agent()
+if "agent" not in st.session_state:
+    st.session_state.agent = create_csv_agent()
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "messages" not in st.session_state:
@@ -75,13 +75,14 @@ with st.sidebar:
                     try:
                         load_request = f"Please load the CSV file at {temp_file_path}, just load the file and do not do any analysis for now, later we will ask you to analyze the data"
 
-                        response = st.session_state.agent_executor.invoke({
-                            "input": load_request,
-                            "chat_history": st.session_state.chat_history
-                        })
+                        # Prepare messages for new agent API
+                        messages = st.session_state.chat_history + [HumanMessage(content=load_request)]
+                        response = st.session_state.agent.invoke({"messages": messages})
+                        
+                        # Extract the agent's response
+                        agent_output = response["messages"][-1].content if response["messages"] else "File loaded"
 
-                        new_plots = extract_plots_from_response(
-                            response['output'])
+                        new_plots = extract_plots_from_response(agent_output)
 
                         user_msg = f"Loaded CSV file: {uploaded_file.name}"
                         st.session_state.messages.append({
@@ -91,14 +92,14 @@ with st.sidebar:
                         })
                         st.session_state.messages.append({
                             "role": "assistant",
-                            "content": response['output'],
+                            "content": agent_output,
                             "plots": new_plots
                         })
 
                         st.session_state.chat_history.append(
                             HumanMessage(content=user_msg))
                         st.session_state.chat_history.append(
-                            AIMessage(content=response['output']))
+                            AIMessage(content=agent_output))
 
                         st.session_state.loaded_files.append(
                             uploaded_file.name)
@@ -148,12 +149,12 @@ if prompt := st.chat_input("Ask about your data..."):
     with st.chat_message("assistant"):
         with st.spinner("Analyzing..."):
             try:
-                response = st.session_state.agent_executor.invoke({
-                    "input": prompt,
-                    "chat_history": st.session_state.chat_history
-                })
-
-                agent_response = response['output']
+                # Prepare messages for new agent API
+                messages = st.session_state.chat_history + [HumanMessage(content=prompt)]
+                response = st.session_state.agent.invoke({"messages": messages})
+                
+                # Extract the agent's response
+                agent_response = response["messages"][-1].content if response["messages"] else "No response"
                 st.markdown(agent_response)
 
                 new_plots = extract_plots_from_response(agent_response)

@@ -1,6 +1,7 @@
 import os
-from langchain.agents import AgentExecutor, create_tool_calling_agent
-from langchain_core.prompts import ChatPromptTemplate
+from typing import Any
+from langchain.agents import create_agent
+from langchain_core.messages import SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from .tools import (
@@ -12,7 +13,7 @@ from .tools import (
 )
 
 
-def create_csv_agent() -> AgentExecutor:
+def create_csv_agent() -> Any:
     llm = ChatGoogleGenerativeAI(
         model="gemini-2.5-flash",
         temperature=0.1,
@@ -25,11 +26,9 @@ def create_csv_agent() -> AgentExecutor:
         create_visualization_tool,
         execute_pandas_code_tool,
     ]
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            (
-                "system",
-                """You are a data analysis expert specializing in CSV data analysis and visualization.
+    
+    system_message = SystemMessage(
+        content="""You are a data analysis expert specializing in CSV data analysis and visualization.
         
 You have access to powerful tools for:
 - Loading and inspecting CSV files
@@ -74,22 +73,13 @@ Guidelines:
 - When multiple visualizations are created, list all plot filenames clearly
 - If no plots were generated, explicitly state this in your response
 - If a plot is generated, always include the filename in your response
-""",
-            ),
-            ("placeholder", "{chat_history}"),
-            ("human", "{input}"),
-            ("placeholder", "{agent_scratchpad}"),
-        ]
+"""
     )
 
-    agent = create_tool_calling_agent(llm, tools, prompt)
-
-    agent_executor = AgentExecutor(
-        agent=agent,
+    agent = create_agent(
+        model=llm,
         tools=tools,
-        verbose=True,
-        handle_parsing_errors=True,
-        max_iterations=15,
+        system_prompt=system_message.content,
     )
 
-    return agent_executor
+    return agent

@@ -1,5 +1,6 @@
-langchain
-langchain-google-genai
+langchain>=0.3.0
+langchain-google-genai>=2.0.0
+langchain-core>=0.3.0
 PyMuPDF
 Pillow
 python-dotenv
@@ -7,5 +8,6 @@ google-generativeai
 aiofiles
 fastapi
 python-multipart
-uvicorn
+uvicorn[standard]
 langsmith
+pydantic>=2.0.0

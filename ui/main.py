@@ -16,6 +16,16 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# Service URL mapping - use Docker container names when running in Docker network
+SERVICE_URLS = {
+    "analyzer": "http://pdf-analyzer-api:8001",
+    "sentiment": "http://sentiment-analyzer-api:8002",
+    "summarizer": "http://summarizer-api:8003",
+    "doc-classify": "http://doc_classify_app:8004",
+    "image-extractor": "http://image_extractor_app:8005",
+    "pdf-server": "http://pdf-analyzer-api:9000",  # Internal PDF server
+}
+
 if "current_service" not in st.session_state:
     st.session_state.current_service = "overview"
 if "last_extraction_result" not in st.session_state:
@@ -145,7 +155,7 @@ def display_sentiment_analysis():
                     }
                     data = {"mode": analysis_mode}
                     response = requests.post(
-                        "http://localhost:8002/sentiment-pdf",
+                        f"{SERVICE_URLS['sentiment']}/sentiment-pdf",
                         files=files,
                         data=data,
                         timeout=240,
@@ -199,7 +209,7 @@ def display_document_classification():
                         "file": (uploaded_file.name, file_obj, uploaded_file.type)
                     }
                     response = requests.post(
-                        "http://localhost:8004/classify-pdf", files=files, timeout=240
+                        f"{SERVICE_URLS['doc-classify']}/classify-pdf", files=files, timeout=240
                     )
                     response.raise_for_status()
                     result = response.json()
@@ -266,7 +276,7 @@ def display_summarizer():
                     data = {"mode": analysis_mode,
                             "summary_type": summary_type}
                     response = requests.post(
-                        "http://localhost:8003/summarize",
+                        f"{SERVICE_URLS['summarizer']}/summarize",
                         files=files,
                         data=data,
                         timeout=240,
@@ -320,7 +330,7 @@ def display_analyzer():
                         data = {"search_query": search_query,
                                 "mode": analysis_mode}
                         response = requests.post(
-                            "http://localhost:8001/analyze",
+                            f"{SERVICE_URLS['analyzer']}/analyze",
                             files=files,
                             data=data,
                             timeout=240,
@@ -351,7 +361,7 @@ def display_analyzer():
                                         if source:
                                             filename = source.split("/")[-1]
                                             pdf_url = (
-                                                f"http://localhost:9000/{filename}"
+                                                f"{SERVICE_URLS['pdf-server']}/{filename}"
                                             )
                                             st.markdown(
                                                 f'<a href="{pdf_url}" target="_blank">View Source</a>',
@@ -380,7 +390,7 @@ def display_analyzer():
                             "file": (ingest_file.name, ingest_file, ingest_file.type)
                         }
                         response = requests.post(
-                            "http://localhost:8001/vectorstore/ingest",
+                            f"{SERVICE_URLS['analyzer']}/vectorstore/ingest",
                             files=files,
                             timeout=240,
                         )
@@ -414,7 +424,7 @@ def display_analyzer():
                 try:
                     payload = {"query": query_text, "k": int(k_val)}
                     response = requests.post(
-                        "http://localhost:8001/vectorstore/query",
+                        f"{SERVICE_URLS['analyzer']}/vectorstore/query",
                         json=payload,
                         timeout=240,
                     )
@@ -439,7 +449,7 @@ def display_analyzer():
                                     st.json(meta)
                                 if source_path and source_path.endswith(".pdf"):
                                     filename = source_path.split("/")[-1]
-                                    pdf_url = f"http://localhost:9000/{filename}"
+                                    pdf_url = f"{SERVICE_URLS['pdf-server']}/{filename}"
                                     st.markdown(
                                         f'<a href="{pdf_url}" target="_blank">View Source</a>',
                                         unsafe_allow_html=True,
@@ -459,7 +469,7 @@ def display_document_extraction():
         or "all_schemas" not in st.session_state
     ):
         try:
-            resp = requests.get("http://localhost:8005/schemas", timeout=240)
+            resp = requests.get(f"{SERVICE_URLS['image-extractor']}/schemas", timeout=240)
             resp.raise_for_status()
             schemas_data = resp.json()
             st.session_state.all_schemas = schemas_data.get("schemas", [])
@@ -544,7 +554,7 @@ def display_document_extraction():
                         )
                     }
                     response = requests.post(
-                        "http://localhost:8005/extract",
+                        f"{SERVICE_URLS['image-extractor']}/extract",
                         files=files,
                         timeout=240,
                     )
@@ -798,7 +808,7 @@ def display_document_extraction():
                             "change_description": "Schema modified via UI",
                         }
                         resp = requests.put(
-                            f"http://localhost:8005/schemas/{schema_id}/modify",
+                            f"{SERVICE_URLS['image-extractor']}/schemas/{schema_id}/modify",
                             json=payload,
                             timeout=240,
                         )
@@ -817,7 +827,7 @@ def display_document_extraction():
             if st.button("Approve Schema", type="secondary"):
                 try:
                     resp = requests.put(
-                        f"http://localhost:8005/schemas/{schema_id}/approve",
+                        f"{SERVICE_URLS['image-extractor']}/schemas/{schema_id}/approve",
                         timeout=240,
                     )
                     resp.raise_for_status()
@@ -943,7 +953,7 @@ def display_member_search():
                                 st.session_state.member_search_queries[loading_key] = True
                                 try:
                                     resp = requests.post(
-                                        "http://localhost:8001/vectorstore/query",
+                                        f"{SERVICE_URLS['analyzer']}/vectorstore/query",
                                         json={"query": concatenated_query, "k": 1},
                                         timeout=240,
                                     )
@@ -955,7 +965,7 @@ def display_member_search():
                                             "metadata", {}).get("source_path")
                                         if source_path:
                                             filename = source_path.split("/")[-1]
-                                            file_url = f"http://localhost:9000/{filename}"
+                                            file_url = f"{SERVICE_URLS['pdf-server']}/{filename}"
                                         else:
                                             file_url = None
                                     else:
@@ -987,7 +997,7 @@ def display_workflow():
                     files = {"file": (uploaded_file.name,
                                       uploaded_file, uploaded_file.type)}
                     response = requests.post(
-                        "http://localhost:8004/classify-pdf", files=files, timeout=240
+                        f"{SERVICE_URLS['doc-classify']}/classify-pdf", files=files, timeout=240
                     )
                     response.raise_for_status()
                     classify_result = response.json()
@@ -1067,7 +1077,7 @@ def display_workflow():
                     files = {"document": (
                         f"group_{group['doc_type']}_{'_'.join(map(str, group['pages']))}.pdf", group["pdf_buffer"], "application/pdf")}
                     response = requests.post(
-                        "http://localhost:8005/extract",
+                        f"{SERVICE_URLS['image-extractor']}/extract",
                         files=files,
                         timeout=240,
                     )

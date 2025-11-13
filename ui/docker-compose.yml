@@ -4,7 +4,11 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: ui-app   
-    network_mode: "host"
+    ports:
+      - "8502:8502"
+      - "9001:9001"
+    networks:
+      - citi-intern-network
     volumes:
       - ./uploads:/app/uploads
       - ./temp:/app/temp
@@ -16,6 +20,10 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+
+networks:
+  citi-intern-network:
+    external: true
 
 volumes:
   uploads:

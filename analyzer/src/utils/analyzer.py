@@ -26,21 +26,86 @@ async def _create_embeddings_async() -> GoogleGenerativeAIEmbeddings:
     )
 
 
-# Replace with Azure OCR
-# def extract_text_from_image(image):
-    # return "test"
-    # with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-    #     image.save(tmp.name)
-    #     tmp_path = tmp.name
-    # with open(tmp_path, "rb") as f:
-    #     files = {"file": f}
-    #     response = requests.post("http://localhost:8006/extract-text", files=files)
-    #     print("Extracted Text:",response.json())
-    #     if response.status_code == 200:
-    #         return response.json()["text"]
-    #     else:
-    #         print(f"Error: {response.status_code} - {response.text}")
-    #         return ""
+def extract_text_from_image(image):
+    """
+    Extract text from image or PDF using the OCR service.
+    Accepts PIL Image objects or file paths (for PDFs).
+    Falls back to empty string if OCR service is unavailable.
+    """
+    # Determine if input is a file path (string) or PIL Image
+    if isinstance(image, str):
+        # It's a file path (likely PDF)
+        file_path = image
+        # Detect file type based on extension
+        if file_path.lower().endswith('.pdf'):
+            mime_type = "application/pdf"
+            filename = "document.pdf"
+        else:
+            # Assume image format
+            ext = os.path.splitext(file_path)[1].lower()
+            if ext in ['.jpg', '.jpeg']:
+                mime_type = "image/jpeg"
+                filename = f"image{ext}"
+            elif ext == '.png':
+                mime_type = "image/png"
+                filename = "image.png"
+            else:
+                mime_type = "image/png"
+                filename = "image.png"
+        
+        try:
+            with open(file_path, "rb") as f:
+                files = {"file": (filename, f, mime_type)}
+                response = requests.post(
+                    "http://ocr-service:8006/extract-text", 
+                    files=files,
+                    timeout=60  # Increased timeout for PDFs
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    print(f"OCR extracted text from {filename} (confidence: {result.get('confidence', 0)})")
+                    return result.get("text", "")
+                else:
+                    print(f"OCR Error: {response.status_code} - {response.text}")
+                    return ""
+        except requests.exceptions.RequestException as e:
+            print(f"OCR service unavailable: {e}. Returning empty text.")
+            return ""
+        except Exception as e:
+            print(f"Error processing file: {e}. Returning empty text.")
+            return ""
+    else:
+        # It's a PIL Image object
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            image.save(tmp.name, format='PNG')
+            tmp_path = tmp.name
+        
+        try:
+            with open(tmp_path, "rb") as f:
+                files = {"file": ("image.png", f, "image/png")}
+                response = requests.post(
+                    "http://ocr-service:8006/extract-text", 
+                    files=files,
+                    timeout=30
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    print(f"OCR extracted text (confidence: {result.get('confidence', 0)})")
+                    return result.get("text", "")
+                else:
+                    print(f"OCR Error: {response.status_code} - {response.text}")
+                    return ""
+        except requests.exceptions.RequestException as e:
+            print(f"OCR service unavailable: {e}. Returning empty text.")
+            return ""
+        finally:
+            # Clean up temp file
+            try:
+                os.unlink(tmp_path)
+            except:
+                pass
 
 
 async def _load_pdf_async(file_path: str) -> List[Document]:
