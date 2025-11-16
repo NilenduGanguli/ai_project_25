@@ -1,6 +1,6 @@
 # Document Extraction Service
 
-A combined frontend and backend service for AI-powered document extraction with schema management. Both services run in a single container with MongoDB for data persistence.
+A combined frontend and backend service for AI-powered document extraction with schema management. Both services run in a single container with PostgreSQL for data persistence.
 
 ## Features
 
@@ -8,7 +8,7 @@ A combined frontend and backend service for AI-powered document extraction with 
 - 📄 **Document Upload & Processing** - Schema generation and data extraction
 - 🤖 **AI-Powered** - Uses Gemini 2.5 Flash for classification and extraction
 - 📊 **Schema Management** - Create, modify, approve, and delete schemas
-- 🗄️ **MongoDB Integration** - Persistent storage for schemas
+- 🗄️ **PostgreSQL Integration** - Persistent storage for schemas with JSON support
 - 🎨 **Web UI** - Beautiful Streamlit interface with multiple pages
 - 🔌 **REST API** - FastAPI backend for programmatic access
 
@@ -28,9 +28,9 @@ A combined frontend and backend service for AI-powered document extraction with 
 └─────────────────────┬───────────────────────────┘
                       │
               ┌───────┴────────┐
-              │    MongoDB     │
+              │   PostgreSQL   │
               │   Container    │
-              │   Port 27017   │
+              │   Port 5432    │
               └────────────────┘
 ```
 
@@ -62,7 +62,7 @@ chmod +x run.sh
 - **Frontend UI**: http://localhost:8504
 - **Backend API**: http://localhost:8005
 - **API Docs**: http://localhost:8005/docs
-- **MongoDB**: mongodb://localhost:27018
+- **PostgreSQL**: postgresql://localhost:5433/document_extraction
 
 ## Management Commands
 
@@ -74,7 +74,7 @@ chmod +x run.sh
 ./run.sh logs           # View all logs
 ./run.sh backend-logs   # View backend logs only
 ./run.sh frontend-logs  # View frontend logs only
-./run.sh mongo-logs     # View MongoDB logs
+./run.sh db-logs        # View PostgreSQL logs
 ./run.sh status         # Check all services status
 ```
 
@@ -102,8 +102,7 @@ All environment variables are managed in `env.sh`:
 |----------|-------------|---------|
 | `PORT` | Backend API port | 8005 |
 | `FRONTEND_PORT` | Frontend UI port | 8501 |
-| `MONGO_URI` | MongoDB connection URI | mongodb://mongodb:27017 |
-| `MONGO_DB_NAME` | MongoDB database name | document_extraction_db |
+| `DATABASE_URL` | PostgreSQL connection URL | postgresql+asyncpg://admin:password123@postgres:5432/document_extraction |
 | `GOOGLE_API_KEY` | Google Gemini API key | Required |
 | `MIN_CLASSIFICATION_CONFIDENCE` | Min confidence threshold | 0.7 |
 | `LANGSMITH_TRACING` | Enable LangSmith tracing | false |
@@ -183,10 +182,10 @@ DELETE /schemas/{schema_id}
 
 ## Service Startup Sequence
 
-1. MongoDB container starts and initializes
-2. Health check waits for MongoDB to be ready
+1. PostgreSQL container starts and initializes
+2. Health check waits for PostgreSQL to be ready
 3. Application container starts and sources `env.sh`
-4. Backend (FastAPI) starts on port 8005
+4. Backend (FastAPI) starts on port 8005 and creates tables
 5. Health check waits for backend to be ready
 6. Frontend (Streamlit) starts on port 8501
 7. Frontend connects to backend via localhost
@@ -218,16 +217,16 @@ The system can classify and extract data from various document types:
 
 ## Troubleshooting
 
-### MongoDB not starting
+### PostgreSQL not starting
 
 Check logs:
 ```bash
-./run.sh mongo-logs
+./run.sh db-logs
 ```
 
-Verify MongoDB health:
+Verify PostgreSQL health:
 ```bash
-docker exec document-extraction-mongodb mongosh --eval "db.adminCommand('ping')"
+docker exec document-extraction-postgres pg_isready -U admin -d document_extraction
 ```
 
 ### Backend not responding
@@ -257,16 +256,20 @@ If ports are in use, modify `docker-compose.yml`:
 ports:
   - "9005:8005"  # Backend
   - "9504:8501"  # Frontend
-  - "37018:27017"  # MongoDB
+  - "6433:5432"  # PostgreSQL
 ```
 
 ## Development
 
 ### Local testing without Docker
 
-1. Start MongoDB:
+1. Start PostgreSQL:
 ```bash
-docker run -d -p 27017:27017 --name mongodb mongo:7.0
+docker run -d -p 5432:5432 --name postgres \
+  -e POSTGRES_DB=document_extraction \
+  -e POSTGRES_USER=admin \
+  -e POSTGRES_PASSWORD=password123 \
+  postgres:15-alpine
 ```
 
 2. Install dependencies:
@@ -277,7 +280,7 @@ pip install -r requirements.txt
 3. Source environment:
 ```bash
 source env.sh
-export MONGO_URI="mongodb://localhost:27017"
+export DATABASE_URL="postgresql+asyncpg://admin:password123@localhost:5432/document_extraction"
 ```
 
 4. Start backend:
@@ -298,7 +301,7 @@ streamlit run app.py
 - **Extraction Time**: ~20-40 seconds per document
 - **Supported File Size**: Up to 10MB recommended
 - **Concurrent Requests**: Handled by FastAPI async
-- **Database**: MongoDB for fast schema queries
+- **Database**: PostgreSQL with JSON support for fast schema queries
 
 ## Security Notes
 
@@ -306,7 +309,8 @@ streamlit run app.py
 - Don't commit `env.sh` with real credentials
 - Use environment-specific key management in production
 - Consider implementing authentication for production
-- MongoDB should use authentication in production
+- PostgreSQL credentials should be secured in production
+- Use SSL/TLS for database connections in production
 
 ## License
 

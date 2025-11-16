@@ -9,26 +9,33 @@ echo "Starting Document Extraction Service"
 echo "=========================================="
 echo "Backend Port: ${PORT}"
 echo "Frontend Port: ${FRONTEND_PORT}"
-echo "MongoDB URI: ${MONGO_URI}"
+echo "Database URL: ${DATABASE_URL}"
 echo "=========================================="
 
-# Wait for MongoDB to be ready
-echo "Waiting for MongoDB to be ready..."
+# Wait for PostgreSQL to be ready
+echo "Waiting for PostgreSQL to be ready..."
 MAX_RETRIES=30
 RETRY_COUNT=0
-until mongosh "${MONGO_URI}" --eval "db.adminCommand('ping')" > /dev/null 2>&1; do
+
+# Extract database connection details from DATABASE_URL
+DB_HOST=$(echo $DATABASE_URL | sed -n 's/.*@\(.*\):.*/\1/p')
+DB_PORT=$(echo $DATABASE_URL | sed -n 's/.*:\([0-9]*\)\/.*/\1/p')
+DB_NAME=$(echo $DATABASE_URL | sed -n 's/.*\/\(.*\)$/\1/p')
+DB_USER=$(echo $DATABASE_URL | sed -n 's/.*:\/\/\(.*\):.*/\1/p')
+
+until PGPASSWORD=password123 psql -h "${DB_HOST:-postgres}" -p "${DB_PORT:-5432}" -U "${DB_USER:-admin}" -d "${DB_NAME:-document_extraction}" -c '\q' > /dev/null 2>&1; do
     RETRY_COUNT=$((RETRY_COUNT + 1))
     if [ ${RETRY_COUNT} -ge ${MAX_RETRIES} ]; then
-        echo "WARNING: MongoDB not responding after ${MAX_RETRIES} retries"
+        echo "WARNING: PostgreSQL not responding after ${MAX_RETRIES} retries"
         echo "Continuing anyway - service will retry connections..."
         break
     fi
-    echo "Waiting for MongoDB... (${RETRY_COUNT}/${MAX_RETRIES})"
+    echo "Waiting for PostgreSQL... (${RETRY_COUNT}/${MAX_RETRIES})"
     sleep 2
 done
 
 if [ ${RETRY_COUNT} -lt ${MAX_RETRIES} ]; then
-    echo "MongoDB is ready!"
+    echo "PostgreSQL is ready!"
 fi
 
 # Start FastAPI backend in background

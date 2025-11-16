@@ -11,17 +11,17 @@ echo "=========================================="
 
 # Function to display usage
 usage() {
-    echo "Usage: $0 {build|up|down|restart|logs|status|backend-logs|frontend-logs|mongo-logs}"
+    echo "Usage: $0 {build|up|down|restart|logs|status|backend-logs|frontend-logs|db-logs}"
     echo ""
     echo "Commands:"
     echo "  build           - Build the Docker images"
-    echo "  up              - Start all services (MongoDB + Extraction)"
+    echo "  up              - Start all services (PostgreSQL + Extraction)"
     echo "  down            - Stop and remove all services"
     echo "  restart         - Restart all services"
     echo "  logs            - Show all container logs"
     echo "  backend-logs    - Show backend logs only"
     echo "  frontend-logs   - Show frontend logs only"
-    echo "  mongo-logs      - Show MongoDB logs"
+    echo "  db-logs         - Show PostgreSQL logs"
     echo "  status          - Show container status"
     exit 1
 }
@@ -50,7 +50,7 @@ case "$1" in
         echo -e "${GREEN}Services started!${NC}"
         echo -e "${GREEN}Backend API: http://localhost:8005${NC}"
         echo -e "${GREEN}Frontend UI: http://localhost:8504${NC}"
-        echo -e "${GREEN}MongoDB: mongodb://localhost:27018${NC}"
+        echo -e "${GREEN}PostgreSQL: postgresql://localhost:5433/document_extraction${NC}"
         ;;
     
     down)
@@ -80,9 +80,9 @@ case "$1" in
         docker logs -f document-extraction 2>&1 | grep -i streamlit
         ;;
     
-    mongo-logs)
-        echo -e "${YELLOW}Showing MongoDB logs (Ctrl+C to exit)...${NC}"
-        docker logs -f document-extraction-mongodb
+    db-logs)
+        echo -e "${YELLOW}Showing PostgreSQL logs (Ctrl+C to exit)...${NC}"
+        docker logs -f document-extraction-postgres
         ;;
     
     status)
@@ -92,11 +92,11 @@ case "$1" in
         echo ""
         echo -e "${YELLOW}Testing endpoints:${NC}"
         
-        # Test MongoDB
-        if docker exec document-extraction-mongodb mongosh --eval "db.adminCommand('ping')" > /dev/null 2>&1; then
-            echo -e "${GREEN}✓ MongoDB (port 27018): Running${NC}"
+        # Test PostgreSQL
+        if docker exec document-extraction-postgres pg_isready -U admin -d document_extraction > /dev/null 2>&1; then
+            echo -e "${GREEN}✓ PostgreSQL (port 5433): Running${NC}"
         else
-            echo -e "${RED}✗ MongoDB (port 27018): Not responding${NC}"
+            echo -e "${RED}✗ PostgreSQL (port 5433): Not responding${NC}"
         fi
         
         # Test backend

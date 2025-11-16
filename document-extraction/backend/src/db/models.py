@@ -1,8 +1,12 @@
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
-from beanie import Document
+from sqlalchemy import Column, Integer, String, DateTime, Enum as SQLEnum, Index, JSON
+from sqlalchemy.ext.declarative import declarative_base
 from pydantic import BaseModel, Field
 from enum import Enum
+
+
+Base = declarative_base()
 
 
 class SchemaStatus(str, Enum):
@@ -65,22 +69,18 @@ class SchemaModificationResponse(BaseModel):
         ..., description="Metadata about the modification")
 
 
-class DocumentSchema(Document):
-    document_type: str = Field(...,
-                               description="Type of document (e.g., pan_card, passport)")
-    country: str = Field(..., description="Country code (ISO 3166-1 alpha-2)")
-    document_schema: Dict[str, Any] = Field(
-        ..., description="JSON schema definition with field types and descriptions")
-    status: SchemaStatus = Field(
-        default=SchemaStatus.IN_REVIEW, description="Schema approval status")
-    created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc))
-    version: int = Field(default=1, description="Schema version number")
-
-    class Settings:
-        name = "document_schemas"
-        indexes = [
-            [("document_type", 1), ("country", 1)],
-        ]
+class DocumentSchema(Base):
+    __tablename__ = "document_schemas"
+    
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    document_type = Column(String, nullable=False, index=True)
+    country = Column(String, nullable=False, index=True)
+    document_schema = Column(JSON, nullable=False)
+    status = Column(SQLEnum(SchemaStatus), default=SchemaStatus.IN_REVIEW, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+    version = Column(Integer, default=1, nullable=False)
+    
+    __table_args__ = (
+        Index('idx_document_type_country', 'document_type', 'country'),
+    )

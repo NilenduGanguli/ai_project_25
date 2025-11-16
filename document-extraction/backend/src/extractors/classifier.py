@@ -5,8 +5,10 @@ from langchain_core.messages import HumanMessage
 from dotenv import load_dotenv
 import aiofiles
 from difflib import SequenceMatcher
+from sqlalchemy import select
 from ..db.models import DocumentTypeClassification, DocumentSchema
 from ..config.llm_config import get_llm
+from ..db.connection import db
 
 
 def calculate_similarity(a: str, b: str) -> float:
@@ -15,12 +17,13 @@ def calculate_similarity(a: str, b: str) -> float:
 
 async def get_existing_document_types(country: str) -> List[str]:
     try:
-        existing_schemas = await DocumentSchema.find(
-            DocumentSchema.country == country
-        ).to_list()
-        
-        document_types = list(set(schema.document_type for schema in existing_schemas))
-        return document_types
+        async with db.async_session_factory() as session:
+            stmt = select(DocumentSchema).where(DocumentSchema.country == country)
+            result = await session.execute(stmt)
+            existing_schemas = result.scalars().all()
+            
+            document_types = list(set(schema.document_type for schema in existing_schemas))
+            return document_types
     except Exception as e:
         return []
 

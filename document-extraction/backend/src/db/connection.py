@@ -1,41 +1,55 @@
 import os
-from pymongo import AsyncMongoClient
-from beanie import init_beanie
-from .models import DocumentSchema
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import sessionmaker
+from .models import Base
 
 
 class Database:
-    client: AsyncMongoClient = None
-    database = None
+    engine = None
+    async_session_factory = None
 
 
 db = Database()
 
 
-async def connect_to_mongo():
-    mongodb_url = os.getenv(
-        "MONGO_URI", "mongodb://admin:password123@mongodb:27017/image_extractor?authSource=admin")
+async def connect_to_database():
+    database_url = os.getenv(
+        "DATABASE_URL", "postgresql+asyncpg://admin:password123@postgres:5432/document_extraction")
 
-    db.client = AsyncMongoClient(
-        mongodb_url,
+    db.engine = create_async_engine(
+        database_url,
+        echo=False,
+        future=True,
+        pool_pre_ping=True,
     )
 
-    database_name = "image_extractor"
-    db.database = db.client[database_name]
-
-    await init_beanie(
-        database=db.database,
-        document_models=[DocumentSchema]
+    db.async_session_factory = async_sessionmaker(
+        db.engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
     )
 
-    print(f"Connected to MongoDB database: {database_name}")
+    # Create tables
+    async with db.engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    print(f"Connected to PostgreSQL database")
 
 
-async def close_mongo_connection():
-    if db.client:
-        db.client.close()
-        print("Disconnected from MongoDB")
+async def close_database_connection():
+    if db.engine:
+        await db.engine.dispose()
+        print("Disconnected from PostgreSQL database")
+
+
+async def get_session() -> AsyncSession:
+    """Get database session for dependency injection"""
+    async with db.async_session_factory() as session:
+        try:
+            yield session
+        finally:
+            await session.close()
 
 
 async def init_db():
-    await connect_to_mongo()
+    await connect_to_database()

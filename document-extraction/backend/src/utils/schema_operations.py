@@ -1,6 +1,8 @@
 from typing import Dict, Any, List, Tuple, Optional
 from datetime import datetime, timezone
+from sqlalchemy import select, and_
 from ..db.models import SchemaChange, DocumentSchema
+from ..db.connection import db
 
 
 def compare_schemas(original_schema: Dict[str, Any], modified_schema: Dict[str, Any]) -> List[SchemaChange]:
@@ -57,22 +59,34 @@ def apply_schema_modifications(original_schema: Dict[str, Any], modifications: D
 
 
 async def calculate_next_version(current_schema: DocumentSchema) -> int:
-    latest_schema = await DocumentSchema.find(
-        DocumentSchema.document_type == current_schema.document_type,
-        DocumentSchema.country == current_schema.country
-    ).sort(-DocumentSchema.version).first_or_none()
+    async with db.async_session_factory() as session:
+        stmt = select(DocumentSchema).where(
+            and_(
+                DocumentSchema.document_type == current_schema.document_type,
+                DocumentSchema.country == current_schema.country
+            )
+        ).order_by(DocumentSchema.version.desc())
+        
+        result = await session.execute(stmt)
+        latest_schema = result.scalars().first()
 
-    if latest_schema:
-        return latest_schema.version + 1
-    else:
-        return current_schema.version + 1
+        if latest_schema:
+            return latest_schema.version + 1
+        else:
+            return current_schema.version + 1
 
 
 async def find_latest_schema_version(document_type: str, country: str) -> DocumentSchema:
-    return await DocumentSchema.find(
-        DocumentSchema.document_type == document_type,
-        DocumentSchema.country == country
-    ).sort(-DocumentSchema.version).first_or_none()
+    async with db.async_session_factory() as session:
+        stmt = select(DocumentSchema).where(
+            and_(
+                DocumentSchema.document_type == document_type,
+                DocumentSchema.country == country
+            )
+        ).order_by(DocumentSchema.version.desc())
+        
+        result = await session.execute(stmt)
+        return result.scalars().first()
 
 
 def generate_change_summary(changes: List[SchemaChange]) -> str:

@@ -13,9 +13,8 @@ export PYTHONPATH=/app
 # Google API Key (required for Gemini AI)
 export GOOGLE_API_KEY="${GOOGLE_API_KEY:-your_api_key_here}"
 
-# MongoDB Configuration
-export MONGO_URI="${MONGO_URI:-mongodb://mongodb:27017}"
-export MONGO_DB_NAME="${MONGO_DB_NAME:-document_extraction_db}"
+# PostgreSQL Database Configuration
+export DATABASE_URL="${DATABASE_URL:-postgresql+asyncpg://admin:password123@postgres:5432/document_extraction}"
 
 # Document Classification Service Configuration
 export MIN_CLASSIFICATION_CONFIDENCE="${MIN_CLASSIFICATION_CONFIDENCE:-0.7}"

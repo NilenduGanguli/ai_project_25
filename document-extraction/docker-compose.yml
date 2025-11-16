@@ -1,16 +1,18 @@
 services:
-  mongodb:
-    image: mongo:7.0
-    container_name: document-extraction-mongodb
+  postgres:
+    image: postgres:15-alpine
+    container_name: document-extraction-postgres
     ports:
-      - "27018:27017"
+      - "5433:5432"
     volumes:
-      - mongodb_data:/data/db
+      - postgres_data:/var/lib/postgresql/data
     environment:
-      - MONGO_INITDB_DATABASE=document_extraction_db
+      - POSTGRES_DB=document_extraction
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=password123
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD-SHELL", "pg_isready -U admin -d document_extraction"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -28,8 +30,7 @@ services:
     environment:
       - PORT=8005
       - FRONTEND_PORT=8501
-      - MONGO_URI=mongodb://mongodb:27017
-      - MONGO_DB_NAME=document_extraction_db
+      - DATABASE_URL=postgresql+asyncpg://admin:password123@postgres:5432/document_extraction
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - MIN_CLASSIFICATION_CONFIDENCE=${MIN_CLASSIFICATION_CONFIDENCE:-0.7}
       - LANGSMITH_TRACING=${LANGSMITH_TRACING:-false}
@@ -37,7 +38,7 @@ services:
       - LANGSMITH_API_KEY=${LANGSMITH_API_KEY:-}
       - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-}
     depends_on:
-      mongodb:
+      postgres:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
@@ -50,7 +51,7 @@ services:
       - extraction-network
 
 volumes:
-  mongodb_data:
+  postgres_data:
     driver: local
 
 networks:
