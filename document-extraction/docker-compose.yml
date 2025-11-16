@@ -1,0 +1,58 @@
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: document-extraction-mongodb
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      - MONGO_INITDB_DATABASE=document_extraction_db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - extraction-network
+
+  document-extraction:
+    build: .
+    image: document-extraction:latest
+    container_name: document-extraction
+    ports:
+      - "8005:8005"  # Backend API
+      - "8504:8501"  # Frontend UI
+    environment:
+      - PORT=8005
+      - FRONTEND_PORT=8501
+      - MONGO_URI=mongodb://mongodb:27017
+      - MONGO_DB_NAME=document_extraction_db
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - MIN_CLASSIFICATION_CONFIDENCE=${MIN_CLASSIFICATION_CONFIDENCE:-0.7}
+      - LANGSMITH_TRACING=${LANGSMITH_TRACING:-false}
+      - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT:-}
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY:-}
+      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    networks:
+      - extraction-network
+
+volumes:
+  mongodb_data:
+    driver: local
+
+networks:
+  extraction-network:
+    driver: bridge
