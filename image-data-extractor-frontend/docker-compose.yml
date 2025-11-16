@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: image-extractor-frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - API_BASE_URL=http://image-data-extractor:8005
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - extractor-network
+    depends_on:
+      - api
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  api:
+    image: image-data-extractor:latest
+    container_name: image-data-extractor-api
+    ports:
+      - "8005:8005"
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - MONGODB_HOST=${MONGODB_HOST:-mongodb}
+      - MONGODB_PORT=${MONGODB_PORT:-27017}
+      - MONGODB_DB=${MONGODB_DB:-document_extraction}
+    networks:
+      - extractor-network
+    depends_on:
+      - mongodb
+    restart: unless-stopped
+
+  mongodb:
+    image: mongo:7.0
+    container_name: image-extractor-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USER:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD:-password}
+      - MONGO_INITDB_DATABASE=${MONGODB_DB:-document_extraction}
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    networks:
+      - extractor-network
+    restart: unless-stopped
+
+networks:
+  extractor-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+  mongodb_config:

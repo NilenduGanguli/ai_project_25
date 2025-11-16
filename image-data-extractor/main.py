@@ -6,6 +6,7 @@ import tempfile
 import json
 import asyncio
 import aiofiles
+import os
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 import uuid
@@ -416,6 +417,41 @@ async def modify_schema(schema_id: str, request: SchemaModificationRequest) -> J
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to apply schema modification: {e}")
+
+
+@app.delete("/schemas/{schema_id}")
+async def delete_schema(schema_id: str) -> JSONResponse:
+    """Delete a schema by ID"""
+    try:
+        schema = await DocumentSchema.get(schema_id)
+        if not schema:
+            raise HTTPException(status_code=404, detail="Schema not found")
+        
+        # Store schema info before deletion for response
+        schema_info = {
+            "id": str(schema.id),
+            "document_type": schema.document_type,
+            "country": schema.country,
+            "status": schema.status,
+            "version": schema.version
+        }
+        
+        # Delete the schema
+        await schema.delete()
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "message": "Schema deleted successfully",
+                "deleted_schema": schema_info
+            }
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to delete schema: {e}")
 
 
 @app.get("/")
