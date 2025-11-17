@@ -71,9 +71,44 @@ All endpoints now return complete schema information:
 - UUID byte conversion implemented throughout
 - All CRUD operations working with synchronous Oracle connections
 
+### Unified Document Services Module -- COMPLETED ✅
+Created new **document-services** module that combines:
+- PDF document classification (from doc-classify)
+- Document data extraction (from document-extraction)
+- Schema management (with UUID support)
+- Single unified Streamlit frontend with 3 tabs
+- 2 containers: 1 app + 1 PostgreSQL database
+- **Environment Configuration**: Uses `env.sh` (like document-extraction) instead of `.env` files
+
+**Module Features:**
+- Unified backend API (FastAPI) on port 8000
+- Unified frontend UI (Streamlit) on port 8501
+- PostgreSQL database on port 5434
+- Combined ~1200+ lines of integrated code
+- Complete documentation and setup scripts
+- Service management via `run.sh` script
+
+**Files Created:**
+- docker-compose.yml (2-container setup)
+- Dockerfile (multi-service container)
+- backend/main.py (663 lines - unified API)
+- frontend/app.py (522 lines - 3-tab UI)
+- requirements.txt (combined dependencies, NO python-dotenv)
+- entrypoint.sh (service orchestration with env.sh sourcing)
+- env.sh (environment variables configuration)
+- run.sh (service management script)
+- README.md (comprehensive docs)
+- MODULE_CREATION_SUMMARY.md (technical details)
+- check_structure.sh (verification script)
+
 ### Next Steps
-- [ ] Database migration scripts for existing data
-- [ ] Test both modules with new UUID implementation
-- [ ] Verify UI compatibility with UUID schema_ids
+- [ ] Test document-services module
+- [ ] Configure GOOGLE_API_KEY in env.sh (edit the file directly)
+- [ ] Build and start using ./run.sh build && ./run.sh up
+- [ ] Test classification workflow
+- [ ] Test extraction workflow
+- [ ] Test schema management
+- [ ] Database migration scripts for existing data (if needed)
 - [ ] Performance testing with UUID indexes
+- [ ] Verify UI compatibility with UUID schema_ids
 

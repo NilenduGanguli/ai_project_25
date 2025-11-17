@@ -1,0 +1,62 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: document-services-postgres
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=document_services
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=password123
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d document_services"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - document-services-network
+
+  document-services:
+    build: .
+    image: document-services:latest
+    container_name: document-services
+    ports:
+      - "8080:8080"  # Landing Page (HTML)
+      - "8000:8000"  # Classification API
+      - "8001:8001"  # Extraction API
+      - "8502:8502"  # Classification UI (Streamlit)
+      - "8501:8501"  # Extraction UI (Streamlit)
+    environment:
+      - PORT=8000
+      - FRONTEND_PORT=8501
+      - DATABASE_URL=postgresql+asyncpg://admin:password123@postgres:5432/document_services
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - MIN_CLASSIFICATION_CONFIDENCE=${MIN_CLASSIFICATION_CONFIDENCE:-0.7}
+      - LANGSMITH_TRACING=${LANGSMITH_TRACING:-false}
+      - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT:-}
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY:-}
+      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    networks:
+      - document-services-network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  document-services-network:
+    driver: bridge
