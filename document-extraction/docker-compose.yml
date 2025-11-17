@@ -1,0 +1,59 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: document-extraction-postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=document_extraction
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=password123
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d document_extraction"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - extraction-network
+
+  document-extraction:
+    build: .
+    image: document-extraction:latest
+    container_name: document-extraction
+    ports:
+      - "8005:8005"  # Backend API
+      - "8504:8501"  # Frontend UI
+    environment:
+      - PORT=8005
+      - FRONTEND_PORT=8501
+      - DATABASE_URL=postgresql+asyncpg://admin:password123@postgres:5432/document_extraction
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - MIN_CLASSIFICATION_CONFIDENCE=${MIN_CLASSIFICATION_CONFIDENCE:-0.7}
+      - LANGSMITH_TRACING=${LANGSMITH_TRACING:-false}
+      - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT:-}
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY:-}
+      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    networks:
+      - extraction-network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  extraction-network:
+    driver: bridge

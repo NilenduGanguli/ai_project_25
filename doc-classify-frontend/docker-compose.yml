@@ -1,0 +1,18 @@
+services:
+  frontend:
+    build: .
+    image: doc-classify-frontend:latest
+    container_name: doc-classify-frontend
+    ports:
+      - "8502:8501"
+    environment:
+      - API_BASE_URL=http://host.docker.internal:8004
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

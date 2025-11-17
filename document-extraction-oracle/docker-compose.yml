@@ -1,0 +1,33 @@
+services:
+  document-extraction-oracle:
+    build: .
+    image: document-extraction-oracle:latest
+    container_name: document-extraction-oracle
+    ports:
+      - "8006:8005"  # Backend API
+      - "8505:8501"  # Frontend UI
+    environment:
+      - PORT=8005
+      - FRONTEND_PORT=8501
+      - ORACLE_USER=${ORACLE_USER}
+      - ORACLE_PASSWORD=${ORACLE_PASSWORD}
+      - ORACLE_DSN=${ORACLE_DSN}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - MIN_CLASSIFICATION_CONFIDENCE=${MIN_CLASSIFICATION_CONFIDENCE:-0.7}
+      - LANGSMITH_TRACING=${LANGSMITH_TRACING:-false}
+      - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT:-}
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY:-}
+      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    networks:
+      - extraction-network
+
+networks:
+  extraction-network:
+    driver: bridge

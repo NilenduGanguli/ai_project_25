@@ -19,6 +19,10 @@ WORKDIR /app
 
 COPY --chown=appuser:appuser main.py .
 COPY --chown=appuser:appuser src/ ./src/
+COPY --chown=appuser:appuser entrypoint.sh .
+
+# Make entrypoint script executable
+RUN chmod +x entrypoint.sh
 
 USER appuser
 
@@ -28,4 +32,4 @@ ENV PYTHONUNBUFFERED=1 \
 
 EXPOSE ${PORT:-8005}
 
-CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8005}
+ENTRYPOINT ["/app/entrypoint.sh"]
