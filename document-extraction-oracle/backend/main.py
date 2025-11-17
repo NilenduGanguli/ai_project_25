@@ -11,10 +11,17 @@ from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 import uuid
 from sqlalchemy import select, and_
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.models import DocumentSchema, SchemaStatus, SchemaModificationRequest, SchemaModificationResponse
 from src.db.connection import init_db, db
+from src.db.queries import (
+    get_schema,
+    get_all_schemas,
+    get_schema_by_id,
+    save_schema,
+    update_schema,
+    delete_schema as delete_schema_db
+)
 from src.extractors.universal import extract_with_db_schema
 from src.extractors.schema_generator import generate_schema_from_documents
 from src.extractors.classifier import classify_document_type
@@ -32,12 +39,12 @@ from src.utils.schema_operations import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_db()
+    init_db()
     yield
 
 
 app = FastAPI(
-    title="Document Extraction API",
+    title="Document Extraction API (Oracle)",
     version="1.0.0",
     lifespan=lifespan,
     docs_url="/docs",
@@ -114,28 +121,9 @@ async def extract_document(
         country = classification.country
 
         try:
-            async with db.async_session_factory() as session:
-                # Query for active schema
-                active_schema_stmt = select(DocumentSchema).where(
-                    and_(
-                        DocumentSchema.document_type == document_type,
-                        DocumentSchema.country == country,
-                        DocumentSchema.status == SchemaStatus.ACTIVE
-                    )
-                )
-                active_result = await session.execute(active_schema_stmt)
-                schema = active_result.scalar_one_or_none()
-
-                # Query for in-review schema
-                in_review_schema_stmt = select(DocumentSchema).where(
-                    and_(
-                        DocumentSchema.document_type == document_type,
-                        DocumentSchema.country == country,
-                        DocumentSchema.status == SchemaStatus.IN_REVIEW
-                    )
-                )
-                in_review_result = await session.execute(in_review_schema_stmt)
-                in_review_schema = in_review_result.scalar_one_or_none()
+            # Query for active and in-review schemas
+            schema = await get_schema(document_type, country, SchemaStatus.ACTIVE)
+            in_review_schema = await get_schema(document_type, country, SchemaStatus.IN_REVIEW)
 
             if schema:
                 extracted_data_json = await extract_with_db_schema(
@@ -145,6 +133,9 @@ async def extract_document(
                 )
 
                 extracted_data = json.loads(extracted_data_json)
+
+                # Convert bytes to UUID string for response
+                schema_id_uuid = uuid.UUID(bytes=schema.id)
 
                 return JSONResponse(
                     status_code=200,
@@ -157,7 +148,7 @@ async def extract_document(
                             "confidence": classification.confidence
                         },
                         "schema_used": {
-                            "schema_id": str(schema.id),
+                            "schema_id": str(schema_id_uuid),
                             "document_type": schema.document_type,
                             "country": schema.country,
                             "version": schema.version,
@@ -170,6 +161,9 @@ async def extract_document(
                 )
 
             if in_review_schema:
+                # Convert bytes to UUID string for response
+                in_review_id_uuid = uuid.UUID(bytes=in_review_schema.id)
+                
                 return JSONResponse(
                     status_code=202,
                     content={
@@ -181,7 +175,7 @@ async def extract_document(
                             "confidence": classification.confidence
                         },
                         "schema": {
-                            "schema_id": str(in_review_schema.id),
+                            "schema_id": str(in_review_id_uuid),
                             "document_type": in_review_schema.document_type,
                             "country": in_review_schema.country,
                             "version": in_review_schema.version,
@@ -216,20 +210,18 @@ async def extract_document(
                         "example": getattr(field_def, 'example', None)
                     }
 
-            async with db.async_session_factory() as session:
-                new_schema = DocumentSchema(
-                    document_type=document_type,
-                    country=country,
-                    document_schema=schema_dict,
-                    status=SchemaStatus.IN_REVIEW,
-                    created_at=datetime.now(timezone.utc),
-                    updated_at=datetime.now(timezone.utc)
-                )
-                
-                session.add(new_schema)
-                await session.commit()
-                await session.refresh(new_schema)
-                new_schema_id = new_schema.id
+            new_schema = DocumentSchema(
+                document_type=document_type,
+                country=country,
+                document_schema=schema_dict,
+                status=SchemaStatus.IN_REVIEW,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc)
+            )
+            
+            new_schema_id_bytes = await save_schema(new_schema)
+            # Convert bytes to UUID string
+            new_schema_id_uuid = uuid.UUID(bytes=new_schema_id_bytes)
 
             return JSONResponse(
                 status_code=201,
@@ -247,7 +239,7 @@ async def extract_document(
                         "confidence": generated_schema.confidence,
                         "schema": schema_dict
                     },
-                    "schema_id": str(new_schema_id)
+                    "schema_id": str(new_schema_id_uuid)
                 }
             )
 
@@ -256,33 +248,32 @@ async def extract_document(
 
 
 @app.get("/schemas")
-async def get_all_schemas() -> JSONResponse:
+async def get_all_schemas_endpoint() -> JSONResponse:
     try:
-        async with db.async_session_factory() as session:
-            stmt = select(DocumentSchema)
-            result = await session.execute(stmt)
-            schemas = result.scalars().all()
+        schemas = await get_all_schemas()
 
-            schema_list = []
-            for schema in schemas:
-                schema_list.append({
-                    "id": str(schema.id),
-                    "document_type": schema.document_type,
-                    "country": schema.country,
-                    "status": schema.status,
-                    "version": schema.version,
-                    "created_at": schema.created_at.isoformat(),
-                    "updated_at": schema.updated_at.isoformat(),
-                    "schema": schema.document_schema
-                })
+        schema_list = []
+        for schema in schemas:
+            # Convert bytes to UUID string
+            schema_id_uuid = uuid.UUID(bytes=schema.id)
+            schema_list.append({
+                "id": str(schema_id_uuid),
+                "document_type": schema.document_type,
+                "country": schema.country,
+                "status": schema.status,
+                "version": schema.version,
+                "created_at": schema.created_at.isoformat(),
+                "updated_at": schema.updated_at.isoformat(),
+                "schema": schema.document_schema
+            })
 
-            return JSONResponse(
-                status_code=200,
-                content={
-                    "schemas": schema_list,
-                    "total_count": len(schema_list)
-                }
-            )
+        return JSONResponse(
+            status_code=200,
+            content={
+                "schemas": schema_list,
+                "total_count": len(schema_list)
+            }
+        )
 
     except Exception as e:
         raise HTTPException(
@@ -292,58 +283,49 @@ async def get_all_schemas() -> JSONResponse:
 @app.put("/schemas/{schema_id}/approve")
 async def approve_schema(schema_id: str) -> JSONResponse:
     try:
-        async with db.async_session_factory() as session:
-            # Get the schema to approve
-            stmt = select(DocumentSchema).where(DocumentSchema.id == uuid.UUID(schema_id))
-            result = await session.execute(stmt)
-            schema = result.scalar_one_or_none()
-            
-            if not schema:
-                raise HTTPException(status_code=404, detail="Schema not found")
+        # Get the schema to approve
+        schema = await get_schema_by_id(uuid.UUID(schema_id))
+        
+        if not schema:
+            raise HTTPException(status_code=404, detail="Schema not found")
 
-            if schema.status != SchemaStatus.IN_REVIEW:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Schema must be in IN_REVIEW status to approve"
-                )
-
-            # Find existing active schema
-            existing_active_stmt = select(DocumentSchema).where(
-                and_(
-                    DocumentSchema.document_type == schema.document_type,
-                    DocumentSchema.country == schema.country,
-                    DocumentSchema.status == SchemaStatus.ACTIVE
-                )
+        if schema.status != SchemaStatus.IN_REVIEW:
+            raise HTTPException(
+                status_code=400,
+                detail="Schema must be in IN_REVIEW status to approve"
             )
-            existing_active_result = await session.execute(existing_active_stmt)
-            existing_active = existing_active_result.scalar_one_or_none()
 
-            deprecated_schema_info = None
-            if existing_active:
-                existing_active.status = SchemaStatus.DEPRECATED
-                existing_active.updated_at = datetime.now(timezone.utc)
-                deprecated_schema_info = {
-                    "id": str(existing_active.id),
-                    "version": existing_active.version
-                }
+        # Find existing active schema
+        existing_active = await get_schema(schema.document_type, schema.country, SchemaStatus.ACTIVE)
 
-            schema.status = SchemaStatus.ACTIVE
-            schema.updated_at = datetime.now(timezone.utc)
-            if existing_active:
-                schema.version = existing_active.version + 1
+        deprecated_schema_info = None
+        if existing_active:
+            existing_active.status = SchemaStatus.DEPRECATED
+            existing_active.updated_at = datetime.now(timezone.utc)
+            await update_schema(existing_active)
+            
+            existing_id_uuid = uuid.UUID(bytes=existing_active.id)
+            deprecated_schema_info = {
+                "id": str(existing_id_uuid),
+                "version": existing_active.version
+            }
 
-            await session.commit()
-            await session.refresh(schema)
+        schema.status = SchemaStatus.ACTIVE
+        schema.updated_at = datetime.now(timezone.utc)
+        if existing_active:
+            schema.version = existing_active.version + 1
 
-            await session.commit()
-            await session.refresh(schema)
+        await update_schema(schema)
+        
+        # Convert bytes to UUID string
+        schema_id_uuid = uuid.UUID(bytes=schema.id)
 
         return JSONResponse(
             status_code=200,
             content={
                 "message": "Schema approved successfully",
                 "schema": {
-                    "id": str(schema.id),
+                    "id": str(schema_id_uuid),
                     "document_type": schema.document_type,
                     "country": schema.country,
                     "status": schema.status,
@@ -363,68 +345,73 @@ async def approve_schema(schema_id: str) -> JSONResponse:
 @app.put("/schemas/{schema_id}/modify")
 async def modify_schema(schema_id: str, request: SchemaModificationRequest) -> JSONResponse:
     try:
-        async with db.async_session_factory() as session:
-            stmt = select(DocumentSchema).where(DocumentSchema.id == uuid.UUID(schema_id))
-            result = await session.execute(stmt)
-            schema = result.scalar_one_or_none()
-            
-            if not schema:
-                raise HTTPException(status_code=404, detail="Schema not found")
+        schema = await get_schema_by_id(uuid.UUID(schema_id))
+        
+        if not schema:
+            raise HTTPException(status_code=404, detail="Schema not found")
 
-            latest_schema = await find_latest_schema_version(schema.document_type, schema.country)
-            if not latest_schema or latest_schema.id != schema.id:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Cannot modify schema version, only the latest version can be modified. Latest schema ID: {str(latest_schema.id) if latest_schema else 'unknown'}"
-                )
-
-            is_valid, error_message = validate_schema_modifications(request.modifications)
-            if not is_valid:
-                raise HTTPException(
-                    status_code=400, detail=f"Invalid modifications: {error_message}")
-
-            original_schema = schema.document_schema.copy()
-            modified_schema = apply_schema_modifications(
-                original_schema, request.modifications)
-
-            changes = compare_schemas(original_schema, modified_schema)
-
-            if not changes:
-                return JSONResponse(
-                    status_code=200,
-                    content={
-                        "message": "No changes detected in the provided modifications",
-                        "schema_id": schema_id,
-                        "current_version": schema.version,
-                        "original_schema": original_schema
-                    }
-                )
-
-            next_version = await calculate_next_version(schema)
-
-            change_summary = generate_change_summary(changes)
-            modification_metadata = get_modification_metadata(
-                changes, request.change_description)
-
-            schema.status = SchemaStatus.DEPRECATED
-            schema.updated_at = datetime.now(timezone.utc)
-
-            new_schema = DocumentSchema(
-                document_type=schema.document_type,
-                country=schema.country,
-                document_schema=modified_schema,
-                status=SchemaStatus.IN_REVIEW,
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc),
-                version=next_version
+        latest_schema = await find_latest_schema_version(schema.document_type, schema.country)
+        
+        # Convert IDs to UUIDs for comparison
+        schema_id_uuid = uuid.UUID(bytes=schema.id)
+        latest_id_uuid = uuid.UUID(bytes=latest_schema.id) if latest_schema else None
+        
+        if not latest_schema or latest_id_uuid != schema_id_uuid:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot modify schema version, only the latest version can be modified. Latest schema ID: {str(latest_id_uuid) if latest_schema else 'unknown'}"
             )
 
-            session.add(new_schema)
-            await session.commit()
-            await session.refresh(new_schema)
+        is_valid, error_message = validate_schema_modifications(request.modifications)
+        if not is_valid:
+            raise HTTPException(
+                status_code=400, detail=f"Invalid modifications: {error_message}")
+
+        original_schema = schema.document_schema.copy()
+        modified_schema = apply_schema_modifications(
+            original_schema, request.modifications)
+
+        changes = compare_schemas(original_schema, modified_schema)
+
+        if not changes:
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "message": "No changes detected in the provided modifications",
+                    "schema_id": schema_id,
+                    "current_version": schema.version,
+                    "original_schema": original_schema
+                }
+            )
+
+        next_version = await calculate_next_version(schema)
+
+        change_summary = generate_change_summary(changes)
+        modification_metadata = get_modification_metadata(
+            changes, request.change_description)
+
+        schema.status = SchemaStatus.DEPRECATED
+        schema.updated_at = datetime.now(timezone.utc)
+        await update_schema(schema)
+
+        new_schema = DocumentSchema(
+            document_type=schema.document_type,
+            country=schema.country,
+            document_schema=modified_schema,
+            status=SchemaStatus.IN_REVIEW,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+            version=next_version
+        )
+
+        new_schema_id_bytes = await save_schema(new_schema)
+        new_schema_id_uuid = uuid.UUID(bytes=new_schema_id_bytes)
+        
+        # Reload schema to get all fields
+        new_schema = await get_schema_by_id(uuid.UUID(bytes=new_schema_id_bytes))
 
         response = SchemaModificationResponse(
-            schema_id=str(new_schema.id),
+            schema_id=str(new_schema_id_uuid),
             current_version=schema.version,
             proposed_version=next_version,
             changes=[change.model_dump() for change in changes],
@@ -440,7 +427,7 @@ async def modify_schema(schema_id: str, request: SchemaModificationRequest) -> J
                 "status": "schema_modified",
                 "message": "Schema successfully modified and saved",
                 "original_schema_info": {
-                    "id": str(schema.id),
+                    "id": str(schema_id_uuid),
                     "document_type": schema.document_type,
                     "country": schema.country,
                     "version": schema.version,
@@ -450,7 +437,7 @@ async def modify_schema(schema_id: str, request: SchemaModificationRequest) -> J
                     "schema": schema.document_schema
                 },
                 "new_schema_info": {
-                    "id": str(new_schema.id),
+                    "id": str(new_schema_id_uuid),
                     "document_type": new_schema.document_type,
                     "country": new_schema.country,
                     "status": new_schema.status,
@@ -473,29 +460,28 @@ async def modify_schema(schema_id: str, request: SchemaModificationRequest) -> J
 async def delete_schema(schema_id: str) -> JSONResponse:
     """Delete a schema by ID"""
     try:
-        async with db.async_session_factory() as session:
-            stmt = select(DocumentSchema).where(DocumentSchema.id == uuid.UUID(schema_id))
-            result = await session.execute(stmt)
-            schema = result.scalar_one_or_none()
-            
-            if not schema:
-                raise HTTPException(status_code=404, detail="Schema not found")
-            
-            # Store schema info before deletion for response
-            schema_info = {
-                "id": str(schema.id),
-                "document_type": schema.document_type,
-                "country": schema.country,
-                "status": schema.status,
-                "version": schema.version,
-                "created_at": schema.created_at.isoformat(),
-                "updated_at": schema.updated_at.isoformat(),
-                "schema": schema.document_schema
-            }
-            
-            # Delete the schema
-            await session.delete(schema)
-            await session.commit()
+        schema = await get_schema_by_id(uuid.UUID(schema_id))
+        
+        if not schema:
+            raise HTTPException(status_code=404, detail="Schema not found")
+        
+        # Convert bytes to UUID string
+        schema_id_uuid = uuid.UUID(bytes=schema.id)
+        
+        # Store schema info before deletion for response
+        schema_info = {
+            "id": str(schema_id_uuid),
+            "document_type": schema.document_type,
+            "country": schema.country,
+            "status": schema.status,
+            "version": schema.version,
+            "created_at": schema.created_at.isoformat(),
+            "updated_at": schema.updated_at.isoformat(),
+            "schema": schema.document_schema
+        }
+        
+        # Delete the schema
+        await delete_schema_db(schema)
         
         return JSONResponse(
             status_code=200,

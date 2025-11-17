@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 from sqlalchemy import Column, Integer, String, DateTime, Enum as SQLEnum, Index, JSON
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.dialects.oracle import RAW
 from pydantic import BaseModel, Field
 from enum import Enum
 import uuid
@@ -74,9 +74,9 @@ class SchemaModificationResponse(BaseModel):
 class DocumentSchema(Base):
     __tablename__ = "document_schemas"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    document_type = Column(String, nullable=False, index=True)
-    country = Column(String, nullable=False, index=True)
+    id = Column(RAW(16), primary_key=True, default=lambda: uuid.uuid4().bytes, index=True)
+    document_type = Column(String(255), nullable=False, index=True)
+    country = Column(String(2), nullable=False, index=True)
     document_schema = Column(JSON, nullable=False)
     status = Column(SQLEnum(SchemaStatus), default=SchemaStatus.IN_REVIEW, nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)

@@ -157,14 +157,9 @@ async def extract_document(
                             "confidence": classification.confidence
                         },
                         "schema_used": {
-                            "schema_id": str(schema.id),
                             "document_type": schema.document_type,
                             "country": schema.country,
-                            "version": schema.version,
-                            "status": schema.status,
-                            "created_at": schema.created_at.isoformat(),
-                            "updated_at": schema.updated_at.isoformat(),
-                            "schema": schema.document_schema
+                            "version": schema.version
                         }
                     }
                 )
@@ -180,16 +175,9 @@ async def extract_document(
                             "country": classification.country,
                             "confidence": classification.confidence
                         },
-                        "schema": {
-                            "schema_id": str(in_review_schema.id),
-                            "document_type": in_review_schema.document_type,
-                            "country": in_review_schema.country,
-                            "version": in_review_schema.version,
-                            "status": in_review_schema.status,
-                            "created_at": in_review_schema.created_at.isoformat(),
-                            "updated_at": in_review_schema.updated_at.isoformat(),
-                            "schema": in_review_schema.document_schema
-                        }
+                        "schema_id": str(in_review_schema.id),
+                        "document_type": in_review_schema.document_type,
+                        "country": in_review_schema.country
                     }
                 )
 
@@ -294,7 +282,7 @@ async def approve_schema(schema_id: str) -> JSONResponse:
     try:
         async with db.async_session_factory() as session:
             # Get the schema to approve
-            stmt = select(DocumentSchema).where(DocumentSchema.id == uuid.UUID(schema_id))
+            stmt = select(DocumentSchema).where(DocumentSchema.id == int(schema_id))
             result = await session.execute(stmt)
             schema = result.scalar_one_or_none()
             
@@ -348,9 +336,7 @@ async def approve_schema(schema_id: str) -> JSONResponse:
                     "country": schema.country,
                     "status": schema.status,
                     "version": schema.version,
-                    "created_at": schema.created_at.isoformat(),
-                    "updated_at": schema.updated_at.isoformat(),
-                    "schema": schema.document_schema
+                    "updated_at": schema.updated_at.isoformat()
                 },
                 "deprecated_schema": deprecated_schema_info
             }
@@ -364,7 +350,7 @@ async def approve_schema(schema_id: str) -> JSONResponse:
 async def modify_schema(schema_id: str, request: SchemaModificationRequest) -> JSONResponse:
     try:
         async with db.async_session_factory() as session:
-            stmt = select(DocumentSchema).where(DocumentSchema.id == uuid.UUID(schema_id))
+            stmt = select(DocumentSchema).where(DocumentSchema.id == int(schema_id))
             result = await session.execute(stmt)
             schema = result.scalar_one_or_none()
             
@@ -441,13 +427,8 @@ async def modify_schema(schema_id: str, request: SchemaModificationRequest) -> J
                 "message": "Schema successfully modified and saved",
                 "original_schema_info": {
                     "id": str(schema.id),
-                    "document_type": schema.document_type,
-                    "country": schema.country,
                     "version": schema.version,
-                    "status": schema.status,
-                    "created_at": schema.created_at.isoformat(),
-                    "updated_at": schema.updated_at.isoformat(),
-                    "schema": schema.document_schema
+                    "status": schema.status
                 },
                 "new_schema_info": {
                     "id": str(new_schema.id),
@@ -456,8 +437,7 @@ async def modify_schema(schema_id: str, request: SchemaModificationRequest) -> J
                     "status": new_schema.status,
                     "version": new_schema.version,
                     "created_at": new_schema.created_at.isoformat(),
-                    "updated_at": new_schema.updated_at.isoformat(),
-                    "schema": new_schema.document_schema
+                    "updated_at": new_schema.updated_at.isoformat()
                 },
                 "modification_details": response.model_dump(),
                 "note": "Changes have been saved to the database"
@@ -474,7 +454,7 @@ async def delete_schema(schema_id: str) -> JSONResponse:
     """Delete a schema by ID"""
     try:
         async with db.async_session_factory() as session:
-            stmt = select(DocumentSchema).where(DocumentSchema.id == uuid.UUID(schema_id))
+            stmt = select(DocumentSchema).where(DocumentSchema.id == int(schema_id))
             result = await session.execute(stmt)
             schema = result.scalar_one_or_none()
             
@@ -487,10 +467,7 @@ async def delete_schema(schema_id: str) -> JSONResponse:
                 "document_type": schema.document_type,
                 "country": schema.country,
                 "status": schema.status,
-                "version": schema.version,
-                "created_at": schema.created_at.isoformat(),
-                "updated_at": schema.updated_at.isoformat(),
-                "schema": schema.document_schema
+                "version": schema.version
             }
             
             # Delete the schema

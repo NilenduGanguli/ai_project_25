@@ -1,11 +1,9 @@
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 from sqlalchemy import Column, Integer, String, DateTime, Enum as SQLEnum, Index, JSON
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.declarative import declarative_base
 from pydantic import BaseModel, Field
 from enum import Enum
-import uuid
 
 
 Base = declarative_base()
@@ -74,7 +72,7 @@ class SchemaModificationResponse(BaseModel):
 class DocumentSchema(Base):
     __tablename__ = "document_schemas"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     document_type = Column(String, nullable=False, index=True)
     country = Column(String, nullable=False, index=True)
     document_schema = Column(JSON, nullable=False)
