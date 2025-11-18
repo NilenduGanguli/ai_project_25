@@ -1,0 +1,65 @@
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: document-services-mongodb
+    ports:
+      - "27019:27017"  # Using 27019 on host to avoid conflict with other MongoDB instances
+    volumes:
+      - mongo_data:/data/db
+      - mongo_config:/data/configdb
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=password123
+      - MONGO_INITDB_DATABASE=document_extraction
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - document-services-network
+
+  document-services:
+    build: .
+    image: document-services-mongo:latest
+    container_name: document-services-mongo
+    ports:
+      - "8080:8080"  # Landing Page (HTML)
+      - "8000:8000"  # Classification API
+      - "8001:8001"  # Extraction API
+      - "8502:8502"  # Classification UI (Streamlit)
+      - "8501:8501"  # Extraction UI (Streamlit)
+    environment:
+      - PORT=8000
+      - FRONTEND_PORT=8501
+      - MONGODB_URL=mongodb://admin:password123@mongodb:27017
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - MIN_CLASSIFICATION_CONFIDENCE=${MIN_CLASSIFICATION_CONFIDENCE:-0.7}
+      - LANGSMITH_TRACING=${LANGSMITH_TRACING:-false}
+      - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT:-}
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY:-}
+      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    networks:
+      - document-services-network
+
+volumes:
+  mongo_data:
+    driver: local
+  mongo_config:
+    driver: local
+
+networks:
+  document-services-network:
+    driver: bridge
