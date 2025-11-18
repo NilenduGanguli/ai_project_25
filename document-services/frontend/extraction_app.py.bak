@@ -1423,7 +1423,7 @@ def main():
     st.sidebar.title("Navigation")
     page = st.sidebar.radio(
         "Go to",
-        ["📝 Register Schema", "📤 Upload Documents", "📚 View All Schemas", "✏️ Modify Schemas", "🔍 Extract & View"],
+        ["� Register Schema", "�📤 Upload Documents", "📚 View All Schemas", "✏️ Modify Schemas", "🔍 Extract & View"],
         label_visibility="collapsed"
     )
     

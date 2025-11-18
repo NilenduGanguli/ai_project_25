@@ -512,6 +512,370 @@ async def delete_schema(schema_id: str) -> JSONResponse:
             status_code=500, detail=f"Failed to delete schema: {e}")
 
 
+@app.post("/register-schema")
+async def register_schema(
+    document: List[UploadFile] = File(...)
+) -> JSONResponse:
+    """
+    Register a new document schema without extraction.
+    Returns error if schema already exists in IN_REVIEW or ACTIVE status.
+    """
+    if not document or len(document) == 0:
+        raise HTTPException(
+            status_code=400, detail="At least one document file is required")
+
+    for i, doc_file in enumerate(document):
+        if doc_file.content_type not in SUPPORTED_DOCUMENT_TYPES:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Document {i+1} must be JPEG, PNG, or PDF. Got: {doc_file.content_type}")
+        
+        if not doc_file.filename or doc_file.filename.strip() == "":
+            raise HTTPException(
+                status_code=400, detail=f"Document {i+1} filename is invalid")
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        document_paths = []
+
+        try:
+            for i, doc_file in enumerate(document):
+                doc_path = temp_path / f"document_{i}_{uuid.uuid4()}"
+                async with aiofiles.open(doc_path, "wb") as buffer:
+                    content = await doc_file.read()
+                    await buffer.write(content)
+                document_paths.append(doc_path)
+
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to save documents: {e}")
+
+        try:
+            classification = await asyncio.wait_for(
+                classify_document_type(document_paths, [doc.content_type for doc in document]),
+                timeout=240.0
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=408,
+                detail="Document classification timed out"
+            )
+
+        if not classification:
+            raise HTTPException(
+                status_code=400,
+                detail="Unable to classify document type"
+            )
+
+        if classification.confidence < MIN_CLASSIFICATION_CONFIDENCE:
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "status": "classification_uncertain",
+                    "message": "Document type classification confidence is below threshold",
+                    "classification": {
+                        "document_type": classification.document_type,
+                        "country": classification.country,
+                        "confidence": classification.confidence
+                    },
+                    "alternative_types": classification.alternative_types
+                }
+            )
+
+        document_type = classification.document_type
+        country = classification.country
+
+        try:
+            async with db.async_session_factory() as session:
+                # Check for existing active schema
+                active_schema_stmt = select(DocumentSchema).where(
+                    and_(
+                        DocumentSchema.document_type == document_type,
+                        DocumentSchema.country == country,
+                        DocumentSchema.status == SchemaStatus.ACTIVE
+                    )
+                )
+                active_result = await session.execute(active_schema_stmt)
+                active_schema = active_result.scalar_one_or_none()
+
+                if active_schema:
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "error": "Schema already exists",
+                            "message": f"An approved schema already exists for {document_type} from {country}",
+                            "existing_schema": {
+                                "schema_id": str(active_schema.id),
+                                "document_type": active_schema.document_type,
+                                "country": active_schema.country,
+                                "version": active_schema.version,
+                                "status": active_schema.status,
+                                "created_at": active_schema.created_at.isoformat(),
+                                "updated_at": active_schema.updated_at.isoformat()
+                            }
+                        }
+                    )
+
+                # Check for existing in-review schema
+                in_review_schema_stmt = select(DocumentSchema).where(
+                    and_(
+                        DocumentSchema.document_type == document_type,
+                        DocumentSchema.country == country,
+                        DocumentSchema.status == SchemaStatus.IN_REVIEW
+                    )
+                )
+                in_review_result = await session.execute(in_review_schema_stmt)
+                in_review_schema = in_review_result.scalar_one_or_none()
+
+                if in_review_schema:
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "error": "Schema already in review",
+                            "message": f"A schema for {document_type} from {country} is already awaiting approval",
+                            "existing_schema": {
+                                "schema_id": str(in_review_schema.id),
+                                "document_type": in_review_schema.document_type,
+                                "country": in_review_schema.country,
+                                "version": in_review_schema.version,
+                                "status": in_review_schema.status,
+                                "created_at": in_review_schema.created_at.isoformat(),
+                                "updated_at": in_review_schema.updated_at.isoformat()
+                            }
+                        }
+                    )
+
+            # Generate new schema
+            generated_schema = await generate_schema_from_documents(
+                document_paths=document_paths,
+                document_types=[doc.content_type for doc in document],
+                document_type=document_type,
+                country=country
+            )
+
+            if not generated_schema:
+                raise HTTPException(
+                    status_code=500, detail="Failed to generate schema")
+
+            schema_dict = {}
+            for field_name, field_def in generated_schema.document_schema.items():
+                if isinstance(field_def, dict):
+                    schema_dict[field_name] = field_def
+                else:
+                    schema_dict[field_name] = {
+                        "type": getattr(field_def, 'type', 'string'),
+                        "description": getattr(field_def, 'description', ''),
+                        "required": getattr(field_def, 'required', True),
+                        "example": getattr(field_def, 'example', None)
+                    }
+
+            async with db.async_session_factory() as session:
+                new_schema = DocumentSchema(
+                    document_type=document_type,
+                    country=country,
+                    document_schema=schema_dict,
+                    status=SchemaStatus.IN_REVIEW,
+                    created_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(timezone.utc)
+                )
+                
+                session.add(new_schema)
+                await session.commit()
+                await session.refresh(new_schema)
+                new_schema_id = new_schema.id
+
+            return JSONResponse(
+                status_code=201,
+                content={
+                    "status": "schema_registered",
+                    "message": "Schema successfully registered and saved for review",
+                    "classification": {
+                        "document_type": classification.document_type,
+                        "country": classification.country,
+                        "confidence": classification.confidence
+                    },
+                    "generated_schema": {
+                        "schema_id": str(new_schema_id),
+                        "document_type": document_type,
+                        "country": country,
+                        "confidence": generated_schema.confidence,
+                        "schema": schema_dict,
+                        "status": SchemaStatus.IN_REVIEW,
+                        "created_at": datetime.now(timezone.utc).isoformat()
+                    }
+                }
+            )
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Schema registration failed: {e}")
+
+
+@app.post("/extract-with-approved-schema")
+async def extract_with_approved_schema(
+    document: List[UploadFile] = File(...)
+) -> JSONResponse:
+    """
+    Extract data from documents using only ACTIVE (approved) schemas.
+    Returns error if schema doesn't exist or is IN_REVIEW.
+    """
+    if not document or len(document) == 0:
+        raise HTTPException(
+            status_code=400, detail="At least one document file is required")
+
+    for i, doc_file in enumerate(document):
+        if doc_file.content_type not in SUPPORTED_DOCUMENT_TYPES:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Document {i+1} must be JPEG, PNG, or PDF. Got: {doc_file.content_type}")
+        
+        if not doc_file.filename or doc_file.filename.strip() == "":
+            raise HTTPException(
+                status_code=400, detail=f"Document {i+1} filename is invalid")
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        document_paths = []
+
+        try:
+            for i, doc_file in enumerate(document):
+                doc_path = temp_path / f"document_{i}_{uuid.uuid4()}"
+                async with aiofiles.open(doc_path, "wb") as buffer:
+                    content = await doc_file.read()
+                    await buffer.write(content)
+                document_paths.append(doc_path)
+
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to save documents: {e}")
+
+        try:
+            classification = await asyncio.wait_for(
+                classify_document_type(document_paths, [doc.content_type for doc in document]),
+                timeout=240.0
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=408,
+                detail="Document classification timed out"
+            )
+
+        if not classification:
+            raise HTTPException(
+                status_code=400,
+                detail="Unable to classify document type"
+            )
+
+        if classification.confidence < MIN_CLASSIFICATION_CONFIDENCE:
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "status": "classification_uncertain",
+                    "message": "Document type classification confidence is below threshold",
+                    "classification": {
+                        "document_type": classification.document_type,
+                        "country": classification.country,
+                        "confidence": classification.confidence
+                    },
+                    "alternative_types": classification.alternative_types
+                }
+            )
+
+        document_type = classification.document_type
+        country = classification.country
+
+        try:
+            async with db.async_session_factory() as session:
+                # Query ONLY for active (approved) schema
+                active_schema_stmt = select(DocumentSchema).where(
+                    and_(
+                        DocumentSchema.document_type == document_type,
+                        DocumentSchema.country == country,
+                        DocumentSchema.status == SchemaStatus.ACTIVE
+                    )
+                )
+                active_result = await session.execute(active_schema_stmt)
+                schema = active_result.scalar_one_or_none()
+
+                if not schema:
+                    # Check if there's an in-review schema
+                    in_review_schema_stmt = select(DocumentSchema).where(
+                        and_(
+                            DocumentSchema.document_type == document_type,
+                            DocumentSchema.country == country,
+                            DocumentSchema.status == SchemaStatus.IN_REVIEW
+                        )
+                    )
+                    in_review_result = await session.execute(in_review_schema_stmt)
+                    in_review_schema = in_review_result.scalar_one_or_none()
+
+                    if in_review_schema:
+                        raise HTTPException(
+                            status_code=403,
+                            detail={
+                                "error": "Schema not approved",
+                                "message": f"Schema for {document_type} from {country} is still in review and not approved for extraction",
+                                "schema_info": {
+                                    "schema_id": str(in_review_schema.id),
+                                    "document_type": in_review_schema.document_type,
+                                    "country": in_review_schema.country,
+                                    "status": in_review_schema.status,
+                                    "version": in_review_schema.version,
+                                    "created_at": in_review_schema.created_at.isoformat()
+                                }
+                            }
+                        )
+                    else:
+                        raise HTTPException(
+                            status_code=404,
+                            detail={
+                                "error": "Schema not found",
+                                "message": f"No approved schema exists for {document_type} from {country}",
+                                "classification": {
+                                    "document_type": classification.document_type,
+                                    "country": classification.country,
+                                    "confidence": classification.confidence
+                                }
+                            }
+                        )
+
+            # Extract data using the approved schema
+            extracted_data_json = await extract_with_db_schema(
+                document_paths=document_paths,
+                document_types=[doc.content_type for doc in document],
+                document_schema=schema
+            )
+
+            extracted_data = json.loads(extracted_data_json)
+
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "status": "extracted",
+                    "data": extracted_data,
+                    "classification": {
+                        "document_type": classification.document_type,
+                        "country": classification.country,
+                        "confidence": classification.confidence
+                    },
+                    "schema_used": {
+                        "schema_id": str(schema.id),
+                        "document_type": schema.document_type,
+                        "country": schema.country,
+                        "version": schema.version,
+                        "status": schema.status,
+                        "created_at": schema.created_at.isoformat(),
+                        "updated_at": schema.updated_at.isoformat(),
+                        "schema": schema.document_schema
+                    }
+                }
+            )
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Extraction failed: {e}")
+
+
 @app.get("/")
 async def health_check():
     return {"status": "healthy"}
