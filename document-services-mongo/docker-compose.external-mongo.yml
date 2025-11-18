@@ -1,0 +1,77 @@
+# Example: Using external MongoDB with multiple workers
+# This configuration removes the local MongoDB service and connects to external MongoDB
+
+services:
+  document-services-1:
+    build: .
+    image: document-services-mongo:latest
+    container_name: document-services-mongo-worker-1
+    ports:
+      - "8080:8080"  # Landing Page
+      - "8000:8000"  # Classification API
+      - "8001:8001"  # Extraction API
+      - "8502:8502"  # Classification UI
+      - "8501:8501"  # Extraction UI
+    environment:
+      - PORT=8000
+      - FRONTEND_PORT=8501
+      # Point to external MongoDB (replace with your MongoDB connection string)
+      - MONGODB_URL=mongodb://admin:password123@external-mongo-host:27017/document_extraction?authSource=admin
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - MIN_CLASSIFICATION_CONFIDENCE=${MIN_CLASSIFICATION_CONFIDENCE:-0.7}
+      - LANGSMITH_TRACING=${LANGSMITH_TRACING:-false}
+      - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT:-}
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY:-}
+      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    networks:
+      - document-services-network
+
+  document-services-2:
+    build: .
+    image: document-services-mongo:latest
+    container_name: document-services-mongo-worker-2
+    ports:
+      - "8180:8080"  # Different host ports to avoid conflicts
+      - "8100:8000"
+      - "8101:8001"
+      - "8602:8502"
+      - "8601:8501"
+    environment:
+      - PORT=8000
+      - FRONTEND_PORT=8501
+      # Same MongoDB URL - all workers share the database
+      - MONGODB_URL=mongodb://admin:password123@external-mongo-host:27017/document_extraction?authSource=admin
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - MIN_CLASSIFICATION_CONFIDENCE=${MIN_CLASSIFICATION_CONFIDENCE:-0.7}
+      - LANGSMITH_TRACING=${LANGSMITH_TRACING:-false}
+      - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT:-}
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY:-}
+      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    networks:
+      - document-services-network
+
+networks:
+  document-services-network:
+    driver: bridge
+
+# Notes:
+# 1. No local MongoDB service - connects to external MongoDB
+# 2. Both workers use the same MONGODB_URL
+# 3. Both workers will share the same database and collection
+# 4. MongoDB handles concurrent operations safely
+# 5. Beanie's init_beanie() is idempotent - safe to call from multiple containers
+# 6. Collection and indexes are created only once (by whichever container starts first)
