@@ -1,4 +1,4 @@
-#!/bin/bash
+
 
 # Build and Run Script for Analyzer Service
 # This script builds the Docker container and runs the analyzer service
